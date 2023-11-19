@@ -130,6 +130,15 @@ class PagedAttention(nn.Module):
         value_cache: torch.Tensor,
         input_metadata: InputMetadata,
         alibi_slopes: Optional[torch.Tensor],
+        key_to_cache: torch.Tensor,
+        value_to_cache: torch.Tensor,
+        slot_mapping: torch.Tensor,
+        key_stride: int,
+        value_stride: int,
+        num_heads: int,
+        head_size: int,
+        block_size: int,
+        x: int
     ) -> None:
         """PagedAttention for the generation tokens.
 
@@ -171,6 +180,12 @@ class PagedAttention(nn.Module):
                 block_size,
                 input_metadata.max_context_len,
                 alibi_slopes,
+                key_to_cache,
+                value_to_cache,
+                slot_mapping,
+                key_stride,
+                value_stride,
+                x
             )
         else:
             # Run PagedAttention V2.
@@ -244,7 +259,7 @@ class PagedAttention(nn.Module):
         # Compute the attention op for prompts.
         num_prompt_tokens = input_metadata.num_prompt_tokens
         if num_prompt_tokens > 0:
-            # Prompt run.
+            # Prompt run. Context Stage
             assert input_metadata.num_generation_tokens == 0
             self.set_attn_bias(input_metadata, dtype=query.dtype)
             self.multi_query_kv_attention(
@@ -267,6 +282,7 @@ class PagedAttention(nn.Module):
             value_to_cache = value
             slot_mapping = input_metadata.slot_mapping.view(-1)
             if input_metadata.to_cache is not None:
+                # This branch is not used in my tests.
                 key_to_cache = key_to_cache[input_metadata.to_cache]
                 value_to_cache = value_to_cache[input_metadata.to_cache]
                 slot_mapping = slot_mapping[input_metadata.to_cache]
@@ -286,10 +302,19 @@ class PagedAttention(nn.Module):
                 "key_cache and value_cache must be provided when "
                 "generating tokens.")
             # Compute the attention op for generation tokens.
-            self.single_query_cached_kv_attention(output, query, key_cache,
-                                                  value_cache, input_metadata,
-                                                  self.get_alibi_slopes())
+            # self.single_query_cached_kv_attention(output, query, key_cache,
+            #                                       value_cache, input_metadata,
+            #                                       self.get_alibi_slopes())
 
+            # TODO(Shang): fix the constant values
+            self.single_query_cached_kv_attention(output, query, key_cache,
+                                                value_cache, input_metadata,
+                                                self.get_alibi_slopes(), 
+                                                key_to_cache, value_to_cache, slot_mapping,
+                                                4096, 4096, # key_stride, value_stride,
+                                                32, 128, #num_heads, head_size,
+                                                16, 8 #block_size, x
+                                                )
         # Reshape the output tensor.
         # NOTE(woosuk): The output tensor may include paddings.
         return output.view(batch_size, seq_len,

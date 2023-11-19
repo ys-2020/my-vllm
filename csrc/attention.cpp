@@ -12,7 +12,17 @@ void paged_attention_v1(
   torch::Tensor& context_lens,
   int block_size,
   int max_context_len,
-  const c10::optional<torch::Tensor>& alibi_slopes);
+  const c10::optional<torch::Tensor>& alibi_slopes,
+  torch::Tensor& key,           // [num_tokens, num_heads, head_size]
+  torch::Tensor& value,         // [num_tokens, num_heads, head_size]
+  torch::Tensor& slot_mapping,   // [num_tokens]
+  const int key_stride,
+  const int value_stride,
+  // const int num_heads,
+  // const int head_size,
+  // const int block_size,
+  const int x
+  );
 
 void paged_attention_v2(
   torch::Tensor& out,
