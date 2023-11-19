@@ -1045,7 +1045,6 @@ void paged_attention_v1_launcher(
   T* value_cache_ptr = reinterpret_cast<T*>(value_cache.data_ptr());
   T* key_ptr = reinterpret_cast<T*>(key.data_ptr());
   T* value_ptr = reinterpret_cast<T*>(value.data_ptr());
-  printf("head_size: %d\n", head_size);
 
   int* head_mapping_ptr = reinterpret_cast<int*>(head_mapping.data_ptr());
   int* block_tables_ptr = block_tables.data_ptr<int>();
