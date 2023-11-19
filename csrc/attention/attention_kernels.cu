@@ -93,6 +93,7 @@ __device__ void paged_attention_kernel(
   const int seq_idx = blockIdx.y;
   const int partition_idx = blockIdx.z;
   const int max_num_partitions = gridDim.z;
+  // There is no partition at least in v1.
   constexpr bool USE_PARTITIONING = PARTITION_SIZE > 0;
   const int context_len = context_lens[seq_idx];
   if (USE_PARTITIONING && partition_idx * PARTITION_SIZE >= context_len) {
@@ -114,9 +115,12 @@ __device__ void paged_attention_kernel(
   const int num_tokens = end_token_idx - start_token_idx;
 
   constexpr int THREAD_GROUP_SIZE = MAX(WARP_SIZE / BLOCK_SIZE, 1);
+  // WARP_SIZE = 32, BLOCK_SIZE = 16 (tokens)
+  // 2 THREADS in 1 GROUP
   constexpr int NUM_THREAD_GROUPS = NUM_THREADS / THREAD_GROUP_SIZE; // Note: This assumes THREAD_GROUP_SIZE divides NUM_THREADS
   assert(NUM_THREADS % THREAD_GROUP_SIZE == 0);
   constexpr int NUM_TOKENS_PER_THREAD_GROUP = DIVIDE_ROUND_UP(BLOCK_SIZE, WARP_SIZE);
+  // NUM_TOKENS_PER_THREAD_GROUP = 1
   constexpr int NUM_WARPS = NUM_THREADS / WARP_SIZE;
   const int thread_idx = threadIdx.x;
   const int warp_idx = thread_idx / WARP_SIZE;
@@ -142,7 +146,7 @@ __device__ void paged_attention_kernel(
   const int thread_group_idx = thread_idx / THREAD_GROUP_SIZE;
   const int thread_group_offset = thread_idx % THREAD_GROUP_SIZE;
 
-  // Load the query to registers.
+  // Load the query to registers. (Only load one head of one query here. -> One block, one query head)
   // Each thread in a thread group has a different part of the query.
   // For example, if the the thread group size is 4, then the first thread in the group
   // has 0, 4, 8, ... th vectors of the query, and the second thread has 1, 5, 9, ...
@@ -150,9 +154,21 @@ __device__ void paged_attention_kernel(
   // NOTE(woosuk): Because q is split from a qkv tensor, it may not be contiguous.
   const scalar_t* q_ptr = q + seq_idx * q_stride + head_idx * HEAD_SIZE;
   __shared__ Q_vec q_vecs[THREAD_GROUP_SIZE][NUM_VECS_PER_THREAD];
+  // q_vecs should have a capacity of HEAD_SIZE / VEC_SIZE, each element is of size VEC_SIZE
+  // if (blockIdx.x + blockIdx.y + threadIdx.x == 0)
+  // {
+  //   printf("thread_group_idx: %d\n", thread_group_idx);
+  //   printf("thread_group_offset: %d\n", thread_group_offset);
+  //   printf("NUM_VECS_PER_THREAD: %d\n", NUM_VECS_PER_THREAD);
+  //   printf("NUM_THREAD_GROUPS: %d\n", NUM_THREAD_GROUPS);
+  // }
 #pragma unroll
   for (int i = thread_group_idx; i < NUM_VECS_PER_THREAD; i += NUM_THREAD_GROUPS) {
+    // i = thread_group_idx; i < 16; i += 64 
+    // Not actually a loop in our case.
+    // Only load through the first several threads.
     const int vec_idx = thread_group_offset + i * THREAD_GROUP_SIZE;
+    // almost equal to thread_idx, unless it is iterated
     q_vecs[thread_group_offset][i] = *reinterpret_cast<const Q_vec*>(q_ptr + vec_idx * VEC_SIZE);
   }
   __syncthreads(); // TODO(naed90): possible speedup if this is replaced with a memory wall right before we use q_vecs
@@ -196,7 +212,11 @@ __device__ void paged_attention_kernel(
                                         + kv_head_idx * kv_head_stride
                                         + physical_block_offset * x;
         const int vec_idx = thread_group_offset + j * THREAD_GROUP_SIZE;
+        // thread_group_offset = 0,1; THREAD_GROUP_SIZE = 2
         const int offset1 = (vec_idx * VEC_SIZE) / x;
+        // Each THD_GROUP fetches x elements at a time
+        // It is not determining group idx here. It is calculating the current round idx of current group.
+        // x = 8
         const int offset2 = (vec_idx * VEC_SIZE) % x;
         k_vecs[j] = *reinterpret_cast<const K_vec*>(k_ptr + offset1 * BLOCK_SIZE * x + offset2);
       }
