@@ -274,28 +274,29 @@ class PagedAttention(nn.Module):
         if cache_event is not None:
             cache_event.wait()
 
-        # Reshape the keys and values and store them in the cache.
-        # When key_cache and value_cache are not provided, the new key
-        # and value vectors will not be cached.
-        if key_cache is not None and value_cache is not None:
-            key_to_cache = key
-            value_to_cache = value
-            slot_mapping = input_metadata.slot_mapping.view(-1)
-            if input_metadata.to_cache is not None:
-                # This branch is not used in my tests.
-                key_to_cache = key_to_cache[input_metadata.to_cache]
-                value_to_cache = value_to_cache[input_metadata.to_cache]
-                slot_mapping = slot_mapping[input_metadata.to_cache]
 
-            cache_ops.reshape_and_cache(
-                key_to_cache,
-                value_to_cache,
-                key_cache,
-                value_cache,
-                slot_mapping,
-            )
+        if not input_metadata.num_generation_tokens > 0:
+            # Reshape the keys and values and store them in the cache.
+            # When key_cache and value_cache are not provided, the new key
+            # and value vectors will not be cached.
+            if key_cache is not None and value_cache is not None:
+                key_to_cache = key
+                value_to_cache = value
+                slot_mapping = input_metadata.slot_mapping.view(-1)
+                if input_metadata.to_cache is not None:
+                    # This branch is not used in my tests.
+                    key_to_cache = key_to_cache[input_metadata.to_cache]
+                    value_to_cache = value_to_cache[input_metadata.to_cache]
+                    slot_mapping = slot_mapping[input_metadata.to_cache]
 
-        if input_metadata.num_generation_tokens > 0:
+                cache_ops.reshape_and_cache(
+                    key_to_cache,
+                    value_to_cache,
+                    key_cache,
+                    value_cache,
+                    slot_mapping,
+                )
+        else:
             # Decoding run.
             assert input_metadata.num_prompt_tokens == 0
             assert key_cache is not None and value_cache is not None, (
@@ -305,6 +306,9 @@ class PagedAttention(nn.Module):
             # self.single_query_cached_kv_attention(output, query, key_cache,
             #                                       value_cache, input_metadata,
             #                                       self.get_alibi_slopes())
+            key_to_cache = key
+            value_to_cache = value
+            slot_mapping = input_metadata.slot_mapping.view(-1)
 
             # TODO(Shang): fix the constant values
             self.single_query_cached_kv_attention(output, query, key_cache,
@@ -315,6 +319,38 @@ class PagedAttention(nn.Module):
                                                 32, 128, #num_heads, head_size,
                                                 16, 8 #block_size, x
                                                 )
+            
+            # import time
+            # iter = 500
+            # tot = 0.0
+            # for i in range(100):
+            #     # warmup
+            #     # print(output)
+            #     self.single_query_cached_kv_attention(output, query, key_cache,
+            #                                         value_cache, input_metadata,
+            #                                         self.get_alibi_slopes(), 
+            #                                         key_to_cache, value_to_cache, slot_mapping,
+            #                                         4096, 4096, # key_stride, value_stride,
+            #                                         32, 128, #num_heads, head_size,
+            #                                         16, 8 #block_size, x
+            #                                         )
+ 
+            # for i in range(iter):
+            #     torch.cuda.synchronize()
+            #     st = time.time()
+            #     tmp = torch.empty_like(output)
+            #     self.single_query_cached_kv_attention(output, query, key_cache,
+            #                                         value_cache, input_metadata,
+            #                                         self.get_alibi_slopes(), 
+            #                                         key_to_cache, value_to_cache, slot_mapping,
+            #                                         4096, 4096, # key_stride, value_stride,
+            #                                         32, 128, #num_heads, head_size,
+            #                                         16, 8 #block_size, x
+            #                                         )
+            #     torch.cuda.synchronize()
+            #     tot += time.time() - st
+            # print(key_cache.shape, value_cache.shape, query.shape)
+            # print("Attn Time", tot / iter * 1000, "ms")
         # Reshape the output tensor.
         # NOTE(woosuk): The output tensor may include paddings.
         return output.view(batch_size, seq_len,
