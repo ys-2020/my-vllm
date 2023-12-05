@@ -201,22 +201,22 @@ class PagedAttention(nn.Module):
                 device=output.device,
             )
             max_logits = torch.empty_like(exp_sums)
-            attention_ops.paged_attention_v2(
-                output,
-                exp_sums,
-                max_logits,
-                tmp_output,
-                query,
-                key_cache,
-                value_cache,
-                self.head_mapping,
-                self.scale,
-                input_metadata.block_tables,
-                input_metadata.context_lens,
-                block_size,
-                input_metadata.max_context_len,
-                alibi_slopes,
-            )
+            # attention_ops.paged_attention_v2(
+            #     output,
+            #     exp_sums,
+            #     max_logits,
+            #     tmp_output,
+            #     query,
+            #     key_cache,
+            #     value_cache,
+            #     self.head_mapping,
+            #     self.scale,
+            #     input_metadata.block_tables,
+            #     input_metadata.context_lens,
+            #     block_size,
+            #     input_metadata.max_context_len,
+            #     alibi_slopes,
+            # )
 
     def forward(
         self,
