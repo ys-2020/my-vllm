@@ -138,7 +138,8 @@ class PagedAttention(nn.Module):
         num_heads: int,
         head_size: int,
         block_size: int,
-        x: int
+        x: int,
+        max_num_blocks_per_seq: int
     ) -> None:
         """PagedAttention for the generation tokens.
 
@@ -168,24 +169,26 @@ class PagedAttention(nn.Module):
             max_num_partitions == 1 or num_seqs * num_heads > 512)
         if use_v1:
             # Run PagedAttention V1.
+            print(query.shape)
+            print(type(input_metadata.max_context_len))
+            exit()
             attention_ops.paged_attention_v1(
                 output,
                 query,
                 key_cache,
                 value_cache,
-                self.head_mapping,
-                self.scale,
-                input_metadata.block_tables,
-                input_metadata.context_lens,
+                self.scale,     # float(1.0 / (head_size**0.5))
+                input_metadata.context_lens,    # also the position number
                 block_size,
                 input_metadata.max_context_len,
-                alibi_slopes,
+                alibi_slopes,   # None for LLaMA
                 key_to_cache,
                 value_to_cache,
                 slot_mapping,
                 key_stride,
                 value_stride,
-                x
+                x,
+                max_num_blocks_per_seq
             )
         else:
             # Run PagedAttention V2.
@@ -309,6 +312,7 @@ class PagedAttention(nn.Module):
             key_to_cache = key
             value_to_cache = value
             slot_mapping = input_metadata.slot_mapping.view(-1)
+            max_num_blocks_per_seq = 2048 // 16
 
             # TODO(Shang): fix the constant values
             self.single_query_cached_kv_attention(output, query, key_cache,
@@ -317,7 +321,8 @@ class PagedAttention(nn.Module):
                                                 key_to_cache, value_to_cache, slot_mapping,
                                                 4096, 4096, # key_stride, value_stride,
                                                 32, 128, #num_heads, head_size,
-                                                16, 8 #block_size, x
+                                                16, 8, #block_size, x
+                                                max_num_blocks_per_seq
                                                 )
             
             # import time

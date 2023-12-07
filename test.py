@@ -8,7 +8,7 @@ prompts = [
 ] * (256 // 4)
 
 
-prompts = ["Once upon a time," ]
+#prompts = ["Once upon a time," ]
 
 sampling_params = SamplingParams(temperature=0, top_p=1)
 
